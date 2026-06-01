@@ -1,0 +1,22 @@
+{
+  "name": "brolaws-control-hub",
+  "version": "1.0.0",
+  "description": "Autonomous AI Agent & Telegram Bot Controller",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "server": "node server.js",
+    "client": "npm run dev --prefix client",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "install-all": "npm install && npm install --prefix client",
+    "build": "npm run build --prefix client"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.11.0",
+    "concurrently": "^8.2.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "telegraf": "^4.16.3"
+  }
+}
