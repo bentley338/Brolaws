@@ -83,7 +83,7 @@ export default function Dashboard({ status, refreshStatus }) {
     );
   }
 
-  const { system, botOnline } = status;
+  const { system, botOnline, agentOnline } = status;
 
   return (
     <div style={{ flex: 1, padding: '32px', overflowY: 'auto', height: '100vh' }}>
@@ -93,13 +93,144 @@ export default function Dashboard({ status, refreshStatus }) {
           <h1 className="text-gradient" style={{ fontSize: '2.2rem', marginBottom: '4px' }}>System Command Dashboard</h1>
           <p style={{ color: 'var(--text-muted)' }}>Monitor host metrics, active agent commands, and Telegram pipelines.</p>
         </div>
-        <div className="glass-panel" style={{ padding: '10px 20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span className={`status-dot ${botOnline ? 'online' : 'offline'}`}></span>
-          <span style={{ fontWeight: '600', fontSize: '0.95rem' }}>
-            Telegram Receiver: {botOnline ? 'ON & LISTENING' : 'OFFLINE'}
-          </span>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <div className="glass-panel" style={{ padding: '10px 20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span className={`status-dot ${agentOnline ? 'online' : 'offline'}`} style={{ animation: agentOnline ? 'pulse-glow 1.5s infinite' : 'none' }}></span>
+            <span style={{ fontWeight: '600', fontSize: '0.95rem' }}>
+              Device Connection: {agentOnline ? 'CONNECTED' : 'OFFLINE'}
+            </span>
+          </div>
+          <div className="glass-panel" style={{ padding: '10px 20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span className={`status-dot ${botOnline ? 'online' : 'offline'}`}></span>
+            <span style={{ fontWeight: '600', fontSize: '0.95rem' }}>
+              Telegram Bot: {botOnline ? 'ONLINE' : 'OFFLINE'}
+            </span>
+          </div>
         </div>
       </div>
+
+      {/* Device Access Status Alert */}
+      {!agentOnline && (
+        <div className="glass-panel" style={{
+          padding: '24px',
+          marginBottom: '32px',
+          border: '1px solid rgba(245, 158, 11, 0.3)',
+          background: 'rgba(245, 158, 11, 0.03)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
+              background: 'rgba(245, 158, 11, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--status-warning)',
+              fontWeight: 'bold',
+              fontSize: '1.2rem'
+            }}>
+              ⚠️
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)' }}>
+                PC Lu Belum Terhubung, Bro!
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                Brolaws Public SaaS aman dan terisolasi. Biar AI bisa ngakses dan ngontrol PC Windows lu secara privat, lu wajib jalanin Local Agent.
+              </p>
+            </div>
+          </div>
+          
+          <div style={{
+            display: 'flex',
+            gap: '24px',
+            alignItems: 'flex-start',
+            flexWrap: 'wrap',
+            marginTop: '8px',
+            borderTop: '1px solid var(--border-glass)',
+            paddingTop: '16px'
+          }}>
+            <div style={{ flex: 1, minWidth: '260px' }}>
+              <h4 style={{ margin: '0 0 8px 0', fontSize: '0.9rem', color: 'var(--accent-gold)' }}>Cara Setup Kilat (1-Click):</h4>
+              <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '0.85rem', color: '#cbd5e1', lineHeight: '1.7' }}>
+                <li>Klik tombol <b>Download Brolaws Agent</b> di sebelah kanan.</li>
+                <li>Pindahin file <code>brolaws-agent.js</code> ke folder kerja di PC lu.</li>
+                <li>Buka CMD/Terminal di folder itu, terus jalanin perintah:
+                  <code style={{ 
+                    display: 'block', 
+                    background: '#05070a', 
+                    padding: '8px 12px', 
+                    borderRadius: '6px', 
+                    marginTop: '6px',
+                    fontFamily: 'var(--font-mono)',
+                    border: '1px solid var(--border-glass)',
+                    color: 'var(--accent-mint)'
+                  }}>node brolaws-agent.js</code>
+                </li>
+              </ol>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '200px' }}>
+              <a
+                href={`/api/agent/download?token=${localStorage.getItem('brolaws_session_token')}`}
+                className="btn-primary"
+                style={{ 
+                  textAlign: 'center', 
+                  textDecoration: 'none', 
+                  padding: '12px', 
+                  fontSize: '0.85rem',
+                  fontWeight: '700',
+                  boxShadow: 'var(--glow-mint)'
+                }}
+              >
+                📥 Download Agent
+              </a>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                *Sandi & token lu otomatis ter-injeksi di dalam script!
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {agentOnline && (
+        <div className="glass-panel" style={{
+          padding: '16px 24px',
+          marginBottom: '32px',
+          border: '1px solid rgba(16, 185, 129, 0.2)',
+          background: 'rgba(16, 185, 129, 0.02)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span className="status-dot online" style={{ animation: 'pulse-glow 1.5s infinite' }}></span>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '700', color: 'var(--accent-mint)' }}>
+                Brolaws Device Connected
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                PC local lu udah sinkron. Brolaws AI siap nerima perintah lu kapan pun secara otonom!
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <span style={{ 
+              fontSize: '0.75rem', 
+              background: 'rgba(16, 185, 129, 0.1)', 
+              color: 'var(--accent-mint)', 
+              padding: '4px 8px', 
+              borderRadius: '4px',
+              border: '1px solid rgba(16, 185, 129, 0.2)'
+            }}>
+              Remote Telemetry: Active
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Grid Layout for Dials & Core Stats */}
       <div style={{
@@ -109,7 +240,25 @@ export default function Dashboard({ status, refreshStatus }) {
         marginBottom: '32px'
       }}>
         {/* Dial Metric: CPU */}
-        <div className="glass-panel glass-panel-glow" style={{ padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-around' }}>
+        <div className="glass-panel glass-panel-glow" style={{ padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-around', position: 'relative', overflow: 'hidden' }}>
+          {!agentOnline && (
+            <div style={{
+              position: 'absolute',
+              top: 0, left: 0, right: 0, bottom: 0,
+              background: 'rgba(10, 11, 14, 0.88)',
+              backdropFilter: 'blur(2px)',
+              zIndex: 3,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '0.85rem',
+              color: 'var(--text-muted)',
+              fontWeight: '600',
+              gap: '6px'
+            }}>
+              📴 PC Client Offline
+            </div>
+          )}
           <CircularProgress
             percentage={system.cpu.percentage}
             label="Active CPU Load"
@@ -128,7 +277,25 @@ export default function Dashboard({ status, refreshStatus }) {
         </div>
 
         {/* Dial Metric: RAM */}
-        <div className="glass-panel glass-panel-glow" style={{ padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-around' }}>
+        <div className="glass-panel glass-panel-glow" style={{ padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-around', position: 'relative', overflow: 'hidden' }}>
+          {!agentOnline && (
+            <div style={{
+              position: 'absolute',
+              top: 0, left: 0, right: 0, bottom: 0,
+              background: 'rgba(10, 11, 14, 0.88)',
+              backdropFilter: 'blur(2px)',
+              zIndex: 3,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '0.85rem',
+              color: 'var(--text-muted)',
+              fontWeight: '600',
+              gap: '6px'
+            }}>
+              📴 PC Client Offline
+            </div>
+          )}
           <CircularProgress
             percentage={system.ram.percentage}
             label="RAM Memory Usage"
@@ -147,7 +314,25 @@ export default function Dashboard({ status, refreshStatus }) {
         </div>
 
         {/* Core Stats Card */}
-        <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+        <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
+          {!agentOnline && (
+            <div style={{
+              position: 'absolute',
+              top: 0, left: 0, right: 0, bottom: 0,
+              background: 'rgba(10, 11, 14, 0.88)',
+              backdropFilter: 'blur(2px)',
+              zIndex: 3,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '0.85rem',
+              color: 'var(--text-muted)',
+              fontWeight: '600',
+              gap: '6px'
+            }}>
+              📴 PC Client Offline
+            </div>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
               <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Server OS</span>

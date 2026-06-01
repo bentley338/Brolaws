@@ -36,6 +36,49 @@ async function getFirstYoutubeVideoId(query) {
     return null;
   }
 }
+// Command Broker State
+let pendingCommands = {}; // username -> array of pending command objects
+let commandResolvers = {}; // commandId -> callback resolver function
+let activeAgents = {}; // username -> timestamp of last heartbeat poll
+
+function isAgentOnline(username) {
+  return activeAgents[username] && (Date.now() - activeAgents[username] < 6000);
+}
+
+function getPendingCommands(username) {
+  activeAgents[username] = Date.now(); // update heartbeat
+  const list = pendingCommands[username] || [];
+  pendingCommands[username] = []; // clear queue after retrieval
+  return list;
+}
+
+function registerHeartbeat(username) {
+  activeAgents[username] = Date.now();
+}
+
+function resolveCommand(id, success, output, screenshotBase64, username) {
+  // If screenshot payload is uploaded by the local runner, save it in the user's isolated workspace
+  if (screenshotBase64) {
+    const workspaceDir = path.join(process.cwd(), 'workspaces', 'user_' + username);
+    if (!fs.existsSync(workspaceDir)) {
+      fs.mkdirSync(workspaceDir, { recursive: true });
+    }
+    const screenshotPath = path.join(workspaceDir, 'screenshot.png');
+    try {
+      fs.writeFileSync(screenshotPath, Buffer.from(screenshotBase64, 'base64'));
+      logger.info(`[Broker] Custom screenshot saved for user: ${username}`, 'Executor');
+    } catch (e) {
+      logger.error(`[Broker] Error saving uploaded screenshot: ${e.message}`, 'Executor');
+    }
+  }
+
+  if (commandResolvers[id]) {
+    commandResolvers[id]({ success, output });
+    delete commandResolvers[id];
+    return true;
+  }
+  return false;
+}
 
 // Native PowerShell Screenshot Capturer
 function takeScreenshot(options = {}) {
@@ -46,30 +89,39 @@ function takeScreenshot(options = {}) {
       fs.mkdirSync(workspaceDir, { recursive: true });
     }
     const outputPath = path.join(workspaceDir, 'screenshot.png');
-    
-    // Commands to load Drawing assembly, capture the PrimaryScreen bounds, and save as PNG
-    const psCommand = `powershell -NoProfile -Command "
-      [Reflection.Assembly]::LoadWithPartialName('System.Drawing') | Out-Null;
-      [Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;
-      $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds;
-      $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height;
-      $graphics = [System.Drawing.Graphics]::FromImage($bmp);
-      $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size);
-      $bmp.Save('${outputPath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png);
-      $graphics.Dispose();
-      $bmp.Dispose();
-    "`;
 
-    logger.info(`Capturing remote desktop screenshot for user ${username} via native PowerShell...`, 'Executor');
-
-    exec(psCommand, (error, stdout, stderr) => {
-      if (error) {
-        logger.error(`Screenshot capture failed for user ${username}: ${error.message}`, 'Executor');
-        return resolve({ success: false, error: error.message });
+    // If local client agent is online, request screen capture from agent
+    if (isAgentOnline(username)) {
+      logger.info(`[Broker] Requesting remote screen capture from client agent of: ${username}`, 'Executor');
+      
+      const commandId = `cmd-${Date.now()}-${Math.round(Math.random() * 100000)}`;
+      if (!pendingCommands[username]) {
+        pendingCommands[username] = [];
       }
-      logger.info(`Screenshot captured successfully and saved to ${outputPath}.`, 'Executor');
-      resolve({ success: true, path: outputPath });
-    });
+      pendingCommands[username].push({
+        id: commandId,
+        command: 'screenshot',
+        type: 'screenshot'
+      });
+
+      // 15 seconds timeout
+      const timeout = setTimeout(() => {
+        delete commandResolvers[commandId];
+        resolve({ success: false, error: 'Screenshot capture from client timed out.' });
+      }, 15000);
+
+      commandResolvers[commandId] = (result) => {
+        clearTimeout(timeout);
+        if (result.success) {
+          resolve({ success: true, path: outputPath });
+        } else {
+          resolve({ success: false, error: result.output || 'Agent failed to capture display.' });
+        }
+      };
+      return;
+    }
+
+    resolve({ success: false, error: 'Local agent is offline.' });
   });
 }
 
@@ -80,9 +132,6 @@ function executeCommand(commandStr, options = { safeMode: false }) {
     if (!fs.existsSync(workspaceDir)) {
       fs.mkdirSync(workspaceDir, { recursive: true });
     }
-    const cwd = options.cwd || workspaceDir;
-
-    logger.cmd(`[User: ${username}] Executing: "${commandStr}" in ${cwd}`, 'Executor');
 
     // Safe mode basic checks
     if (options.safeMode) {
@@ -95,86 +144,53 @@ function executeCommand(commandStr, options = { safeMode: false }) {
       }
     }
 
-    // Special handlers to open apps on Windows asynchronously
-    let finalCommand = commandStr;
-    const lowerCmd = commandStr.trim().toLowerCase();
-
-    // Screenshot triggers
-    if (['ss', '/ss', 'screenshot', '/screenshot'].includes(lowerCmd)) {
-      takeScreenshot({ username }).then(res => {
-        resolve({
-          success: res.success,
-          output: res.success ? 'Screenshot captured successfully.' : `Failed: ${res.error}`,
-          error: !res.success
-        });
-      });
-      return;
-    }
-    
-    // Music playing handler (Auto-plays direct YouTube watch video link!)
-    const musicPrefixes = ['setel lagu ', 'putar lagu ', 'play ', 'setel musik ', 'putar musik '];
-    const matchedPrefix = musicPrefixes.find(prefix => lowerCmd.startsWith(prefix));
-    
-    if (matchedPrefix) {
-      const songQuery = commandStr.substring(matchedPrefix.length).trim();
-      logger.info(`Searching direct YouTube autoplay link for "${songQuery}"...`, 'Executor');
+    // If client runner agent is online, forward command to queue
+    if (isAgentOnline(username)) {
+      logger.info(`[Broker] Forwarding command to agent ${username}: "${commandStr}"`, 'Executor');
       
-      getFirstYoutubeVideoId(songQuery).then(videoId => {
-        let finalCmd = '';
-        if (videoId) {
-          finalCmd = `start "" "https://www.youtube.com/watch?v=${videoId}"`;
-          logger.info(`Found video ID "${videoId}". Autoplay watch link initiated.`, 'Executor');
-        } else {
-          const escapedQuery = encodeURIComponent(songQuery);
-          finalCmd = `start "" "https://www.youtube.com/results?search_query=${escapedQuery}"`;
-          logger.info(`Direct match failed. Falling back to search results page.`, 'Executor');
-        }
-        
-        runChildProcess(finalCmd, cwd, resolve);
+      const commandId = `cmd-${Date.now()}-${Math.round(Math.random() * 100000)}`;
+      if (!pendingCommands[username]) {
+        pendingCommands[username] = [];
+      }
+      pendingCommands[username].push({
+        id: commandId,
+        command: commandStr,
+        type: 'shell'
       });
+
+      // 20 seconds timeout
+      const timeout = setTimeout(() => {
+        delete commandResolvers[commandId];
+        resolve({
+          success: false,
+          output: `⚠️ Timeout: PC lu gak merespon perintah dalam 20 detik, bro. Coba cek CMD di PC lu apakah agent-nya masih jalan.`,
+          error: true
+        });
+      }, 20000);
+
+      commandResolvers[commandId] = (result) => {
+        clearTimeout(timeout);
+        resolve({
+          success: result.success,
+          output: result.output,
+          error: !result.success
+        });
+      };
       return;
     }
-    
-    if (WINDOWS_APPS[lowerCmd]) {
-      finalCommand = WINDOWS_APPS[lowerCmd];
-    } else if (lowerCmd.startsWith('open ')) {
-      const appName = lowerCmd.substring(5).trim();
-      if (WINDOWS_APPS[appName]) {
-        finalCommand = WINDOWS_APPS[appName];
-      } else {
-        // Try starting the program directly using Windows start command
-        finalCommand = `start "" "${appName}"`;
-      }
-    }
 
-    runChildProcess(finalCommand, cwd, resolve);
-  });
-}
-
-function runChildProcess(finalCommand, cwd, resolve) {
-  exec(finalCommand, { cwd: cwd }, (error, stdout, stderr) => {
-    const outText = stdout ? stdout.toString() : '';
-    const errText = stderr ? stderr.toString() : '';
-    
-    if (error) {
-      logger.error(`Command failed in ${cwd}: ${error.message}`, 'Executor');
-      return resolve({
-        success: false,
-        output: outText + '\n' + errText + '\n' + error.message,
-        error: true
-      });
-    }
-
-    logger.info(`Command completed successfully.`, 'Executor');
-    resolve({
-      success: true,
-      output: outText || errText || 'Command executed successfully (no output).',
-      error: false
-    });
+    // Fallback: local agent is offline
+    const errMsg = `Waduh bro! PC lu belum terhubung ke Brolaws nih.\n\nSilahkan download Brolaws Agent di Dashboard lu, terus jalanin perintah:\n  node brolaws-agent.js\ndi CMD komputer lu biar gw bisa dapet akses aman ke PC lu! Gas!`;
+    logger.warn(`[Broker] Command blocked: Agent for ${username} is offline.`, 'Executor');
+    resolve({ success: false, output: errMsg, error: true });
   });
 }
 
 module.exports = {
   executeCommand,
-  takeScreenshot
+  takeScreenshot,
+  getPendingCommands,
+  resolveCommand,
+  isAgentOnline,
+  registerHeartbeat
 };

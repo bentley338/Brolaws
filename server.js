@@ -28,13 +28,14 @@ const authMiddleware = (req, res, next) => {
     return next();
   }
 
-  if (req.path === '/api/screenshot') {
+  // Allow download and screenshot using query token for native elements
+  if (req.path === '/api/screenshot' || req.path === '/api/agent/download') {
     const queryToken = req.query.token;
     if (queryToken && activeSessions[queryToken]) {
       req.user = activeSessions[queryToken];
       return next();
     }
-    return res.status(401).json({ success: false, message: 'Unauthorized screen view request.' });
+    return res.status(401).json({ success: false, message: 'Unauthorized query token request.' });
   }
 
   const authHeader = req.headers.authorization;
@@ -50,7 +51,7 @@ const authMiddleware = (req, res, next) => {
 };
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '15mb' })); // Support base64 screen transmissions
 app.use(authMiddleware);
 
 // Persistent database setup
@@ -284,17 +285,64 @@ app.get('/api/screenshot', (req, res) => {
   const workspaceDir = path.join(process.cwd(), 'workspaces', 'user_' + username);
   const screenshotPath = path.join(workspaceDir, 'screenshot.png');
 
-  if (fs.existsSync(screenshotPath)) {
-    res.sendFile(screenshotPath);
-  } else {
-    // Generate isolated screen capture
+  if (executor.isAgentOnline(username)) {
+    // Dispatch request to remote agent
     executor.takeScreenshot({ username }).then(result => {
-      if (result.success) {
-        res.sendFile(result.path);
+      if (result.success && fs.existsSync(screenshotPath)) {
+        res.sendFile(screenshotPath);
       } else {
-        res.status(404).send('No screenshot captured yet for this user.');
+        res.status(404).send('Failed to fetch screenshot from client agent.');
       }
     });
+  } else {
+    // Serve last captured screenshot if offline
+    if (fs.existsSync(screenshotPath)) {
+      res.sendFile(screenshotPath);
+    } else {
+      res.status(404).send('Local agent is offline. Connect your device first.');
+    }
+  }
+});
+
+// 0.5 Client Agent Polling Broker Endpoint
+app.get('/api/agent/poll', (req, res) => {
+  const username = req.user.normalizedUsername;
+  const commands = executor.getPendingCommands(username);
+  res.json({ commands });
+});
+
+// 0.6 Client Agent Result Submitter Endpoint
+app.post('/api/agent/result', (req, res) => {
+  const { id, success, output, screenshot } = req.body;
+  const username = req.user.normalizedUsername;
+  const resolved = executor.resolveCommand(id, success, output, screenshot, username);
+  res.json({ success: resolved });
+});
+
+// 0.7 Dynamic Tailored Client Agent Installer Downloader
+app.get('/api/agent/download', (req, res) => {
+  const token = req.query.token;
+  const agentFilePath = path.join(__dirname, 'brolaws-agent.js');
+
+  if (!fs.existsSync(agentFilePath)) {
+    return res.status(404).send('Brolaws client agent template script not found.');
+  }
+
+  try {
+    let content = fs.readFileSync(agentFilePath, 'utf-8');
+    const protocol = req.protocol;
+    const host = req.get('host');
+    const serverUrl = `${protocol}://${host}`;
+
+    // Pre-inject actual Server URL and the user specific Session Token
+    content = content.replace("%%BROLAWS_SERVER%%", serverUrl);
+    content = content.replace("%%BROLAWS_TOKEN%%", token);
+
+    res.setHeader('Content-disposition', 'attachment; filename=brolaws-agent.js');
+    res.setHeader('Content-type', 'application/javascript');
+    res.send(content);
+  } catch (e) {
+    res.status(500).send(`Failed to package custom client agent: ${e.message}`);
   }
 });
 
@@ -311,8 +359,12 @@ app.get('/api/status', (req, res) => {
   const load = os.loadavg();
   const cpuUsage = Math.round(load[0] * 100) || 12;
 
+  // Let local agent poll act as a temporary heartbeat check
+  executor.registerHeartbeat(username);
+
   res.json({
     botOnline: telegram.getUserBotStatus(username),
+    agentOnline: executor.isAgentOnline(username),
     system: {
       platform: os.platform(),
       release: os.release(),
@@ -385,7 +437,7 @@ app.get('/api/logs', (req, res) => {
   res.json(logger.getLogs());
 });
 
-// 5. Run Command directly in Web Terminal (Isolated to user workspace)
+// 5. Run Command directly in Web Terminal (Forwarded to client agent)
 app.post('/api/terminal/run', async (req, res) => {
   const { command } = req.body;
   if (!command) {
@@ -395,16 +447,10 @@ app.post('/api/terminal/run', async (req, res) => {
   const username = req.user.normalizedUsername;
   const db = readDatabase();
   const user = db.users[username];
-  const workspaceDir = path.join(process.cwd(), 'workspaces', 'user_' + username);
-
-  if (!fs.existsSync(workspaceDir)) {
-    fs.mkdirSync(workspaceDir, { recursive: true });
-  }
 
   const execResult = await executor.executeCommand(command, { 
     safeMode: user.settings.safeMode,
-    username,
-    cwd: workspaceDir
+    username
   });
   res.json(execResult);
 });
@@ -424,7 +470,7 @@ app.post('/api/telegram/test', async (req, res) => {
   }
 });
 
-// 7. Chat Directly with AI Agent from Browser (User-isolated settings & workspaces)
+// 7. Chat Directly with AI Agent from Browser (Decoupled system execution)
 app.post('/api/chat', async (req, res) => {
   const { message, history } = req.body;
   if (!message) {
