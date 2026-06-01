@@ -9,6 +9,7 @@ import { apiRequest } from './utils/api';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('brolaws_session_token'));
+  const [username, setUsername] = useState(localStorage.getItem('brolaws_username') || '');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [status, setStatus] = useState(null);
 
@@ -31,7 +32,9 @@ export default function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('brolaws_session_token');
+    localStorage.removeItem('brolaws_username');
     setIsAuthenticated(false);
+    setUsername('');
     setStatus(null);
   };
 
@@ -52,7 +55,16 @@ export default function App() {
 
   // Enforce secure login wall if not authenticated
   if (!isAuthenticated) {
-    return <Login onLoginSuccess={() => setIsAuthenticated(true)} />;
+    return (
+      <Login 
+        onLoginSuccess={(token, user) => {
+          localStorage.setItem('brolaws_session_token', token);
+          localStorage.setItem('brolaws_username', user);
+          setIsAuthenticated(true);
+          setUsername(user);
+        }} 
+      />
+    );
   }
 
   return (
@@ -62,6 +74,7 @@ export default function App() {
         setActiveTab={setActiveTab} 
         botOnline={status ? status.botOnline : false} 
         onLogout={handleLogout}
+        username={username}
       />
       <main style={{ flex: 1, height: '100vh', overflow: 'hidden', background: 'transparent' }}>
         {renderContent()}

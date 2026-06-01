@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Sidebar({ activeTab, setActiveTab, botOnline, onLogout }) {
+export default function Sidebar({ activeTab, setActiveTab, botOnline, onLogout, username }) {
   const menuItems = [
     {
       id: 'dashboard',
@@ -48,7 +48,7 @@ export default function Sidebar({ activeTab, setActiveTab, botOnline, onLogout }
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
-        marginBottom: '40px',
+        marginBottom: '20px',
         padding: '0 8px'
       }}>
         <div className="logo-glow" style={{
@@ -68,6 +68,43 @@ export default function Sidebar({ activeTab, setActiveTab, botOnline, onLogout }
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span className={`status-dot ${botOnline ? 'online' : 'offline'}`}></span>
             {botOnline ? 'Bot Online' : 'Bot Offline'}
+          </span>
+        </div>
+      </div>
+
+      {/* User profile Identity panel */}
+      <div className="user-profile" style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        marginBottom: '24px',
+        padding: '12px',
+        borderRadius: '10px',
+        background: 'rgba(255, 255, 255, 0.02)',
+        border: '1px solid var(--border-glass)'
+      }}>
+        <div style={{
+          width: '34px',
+          height: '34px',
+          borderRadius: '50%',
+          background: 'linear-gradient(135deg, var(--accent-emerald), var(--accent-mint))',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontWeight: '700',
+          color: '#000',
+          fontSize: '0.95rem',
+          textTransform: 'uppercase',
+          boxShadow: '0 0 10px rgba(16, 185, 129, 0.2)'
+        }}>
+          {username ? username.charAt(0) : 'U'}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+            {username || 'Brolaws User'}
+          </span>
+          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+            Aktif (Privat)
           </span>
         </div>
       </div>

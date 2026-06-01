@@ -38,9 +38,14 @@ async function getFirstYoutubeVideoId(query) {
 }
 
 // Native PowerShell Screenshot Capturer
-function takeScreenshot() {
+function takeScreenshot(options = {}) {
   return new Promise((resolve) => {
-    const outputPath = path.join(process.cwd(), 'screenshot.png');
+    const username = options.username || 'admin';
+    const workspaceDir = path.join(process.cwd(), 'workspaces', 'user_' + username);
+    if (!fs.existsSync(workspaceDir)) {
+      fs.mkdirSync(workspaceDir, { recursive: true });
+    }
+    const outputPath = path.join(workspaceDir, 'screenshot.png');
     
     // Commands to load Drawing assembly, capture the PrimaryScreen bounds, and save as PNG
     const psCommand = `powershell -NoProfile -Command "
@@ -55,14 +60,14 @@ function takeScreenshot() {
       $bmp.Dispose();
     "`;
 
-    logger.info('Capturing remote desktop screenshot via native PowerShell...', 'Executor');
+    logger.info(`Capturing remote desktop screenshot for user ${username} via native PowerShell...`, 'Executor');
 
     exec(psCommand, (error, stdout, stderr) => {
       if (error) {
-        logger.error(`Screenshot capture failed: ${error.message}`, 'Executor');
+        logger.error(`Screenshot capture failed for user ${username}: ${error.message}`, 'Executor');
         return resolve({ success: false, error: error.message });
       }
-      logger.info('Screenshot captured successfully and saved to disk.', 'Executor');
+      logger.info(`Screenshot captured successfully and saved to ${outputPath}.`, 'Executor');
       resolve({ success: true, path: outputPath });
     });
   });
@@ -70,7 +75,14 @@ function takeScreenshot() {
 
 function executeCommand(commandStr, options = { safeMode: false }) {
   return new Promise((resolve) => {
-    logger.cmd(`Executing: "${commandStr}"`, 'Executor');
+    const username = options.username || 'admin';
+    const workspaceDir = path.join(process.cwd(), 'workspaces', 'user_' + username);
+    if (!fs.existsSync(workspaceDir)) {
+      fs.mkdirSync(workspaceDir, { recursive: true });
+    }
+    const cwd = options.cwd || workspaceDir;
+
+    logger.cmd(`[User: ${username}] Executing: "${commandStr}" in ${cwd}`, 'Executor');
 
     // Safe mode basic checks
     if (options.safeMode) {
@@ -89,7 +101,7 @@ function executeCommand(commandStr, options = { safeMode: false }) {
 
     // Screenshot triggers
     if (['ss', '/ss', 'screenshot', '/screenshot'].includes(lowerCmd)) {
-      takeScreenshot().then(res => {
+      takeScreenshot({ username }).then(res => {
         resolve({
           success: res.success,
           output: res.success ? 'Screenshot captured successfully.' : `Failed: ${res.error}`,
@@ -118,7 +130,7 @@ function executeCommand(commandStr, options = { safeMode: false }) {
           logger.info(`Direct match failed. Falling back to search results page.`, 'Executor');
         }
         
-        runChildProcess(finalCmd, resolve);
+        runChildProcess(finalCmd, cwd, resolve);
       });
       return;
     }
@@ -135,17 +147,17 @@ function executeCommand(commandStr, options = { safeMode: false }) {
       }
     }
 
-    runChildProcess(finalCommand, resolve);
+    runChildProcess(finalCommand, cwd, resolve);
   });
 }
 
-function runChildProcess(finalCommand, resolve) {
-  exec(finalCommand, { cwd: process.cwd() }, (error, stdout, stderr) => {
+function runChildProcess(finalCommand, cwd, resolve) {
+  exec(finalCommand, { cwd: cwd }, (error, stdout, stderr) => {
     const outText = stdout ? stdout.toString() : '';
     const errText = stderr ? stderr.toString() : '';
     
     if (error) {
-      logger.error(`Command failed: ${error.message}`, 'Executor');
+      logger.error(`Command failed in ${cwd}: ${error.message}`, 'Executor');
       return resolve({
         success: false,
         output: outText + '\n' + errText + '\n' + error.message,

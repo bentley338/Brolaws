@@ -2,43 +2,40 @@ const { Telegraf } = require('telegraf');
 const logger = require('./logger');
 const llm = require('./llm');
 
-let botInstance = null;
-let currentToken = null;
-let currentAdminChatId = null;
-let currentApiConfig = {};
+let activeBots = {};
 
-async function startBot(token, adminChatId, apiConfig) {
+async function startUserBot(username, token, adminChatId, apiConfig) {
   if (!token) {
-    logger.warn('Cannot start Telegram Bot: Token is empty.', 'Telegram');
+    logger.warn(`Cannot start Telegram Bot for ${username}: Token is empty.`, 'Telegram');
     return false;
   }
 
-  // If already running with same config, do nothing
+  const userBot = activeBots[username];
   if (
-    botInstance &&
-    currentToken === token &&
-    currentAdminChatId === adminChatId &&
-    JSON.stringify(currentApiConfig) === JSON.stringify(apiConfig)
+    userBot &&
+    userBot.token === token &&
+    userBot.adminChatId === adminChatId &&
+    JSON.stringify(userBot.apiConfig) === JSON.stringify(apiConfig)
   ) {
-    logger.info('Telegram Bot is already running with up-to-date configuration.', 'Telegram');
+    logger.info(`Telegram Bot for ${username} is already running with up-to-date configuration.`, 'Telegram');
     return true;
   }
 
   // Stop previous instance if running
-  await stopBot();
+  await stopUserBot(username);
 
   try {
-    logger.info('Initializing Telegram Bot...', 'Telegram');
+    logger.info(`Initializing Telegram Bot for ${username}...`, 'Telegram');
     const bot = new Telegraf(token);
 
     bot.start((ctx) => {
       const chatId = ctx.chat.id.toString();
       if (adminChatId && chatId !== adminChatId.toString()) {
         ctx.reply('❌ Access Denied: You are not authorized to control this Brolaws server.');
-        logger.warn(`Unauthorized startup request from Chat ID: ${chatId}`, 'Telegram');
+        logger.warn(`[User: ${username}] Unauthorized startup request from Chat ID: ${chatId}`, 'Telegram');
         return;
       }
-      ctx.reply('🤖 Brolaws PC Controller Activated! Gw siap dengerin semua perintah lu, bro.\n\nKetik apa aja buat ngobrol santuy sama AI, atau ketik garis miring buat command shell langsung (contoh: /dir, /ss).');
+      ctx.reply('🤖 Brolaws PC Controller Activated! Gw siap dengerin semua perintah lu, bro.\n\nKetik apa aja buat ngobrol santuy sama AI, atau ketik garis miring buat command shell langsung (contoh: /ss, /dir).');
     });
 
     bot.on('text', async (ctx) => {
@@ -48,26 +45,26 @@ async function startBot(token, adminChatId, apiConfig) {
       // Access restriction
       if (adminChatId && chatId !== adminChatId.toString()) {
         ctx.reply('❌ Access Denied: You are not authorized.');
-        logger.warn(`Access denied to User ID ${chatId} sending: "${text}"`, 'Telegram');
+        logger.warn(`[User: ${username}] Access denied to User ID ${chatId} sending: "${text}"`, 'Telegram');
         return;
       }
 
-      logger.info(`Received Telegram message: "${text}"`, 'Telegram');
+      logger.info(`[User: ${username}] Received Telegram message: "${text}"`, 'Telegram');
 
       // Direct screenshot capture hook
       const lowerText = text.trim().toLowerCase();
       if (['/ss', 'ss', 'screenshot', '/screenshot'].includes(lowerText)) {
         try {
           const executor = require('./executor');
-          const res = await executor.takeScreenshot();
+          const res = await executor.takeScreenshot({ username });
           if (res.success) {
             await ctx.replyWithPhoto({ source: res.path }, { caption: '📸 Ini screenshot desktop lu saat ini, bro! (Brolaws Active Screen)' });
-            logger.info('Screenshot sent directly to Telegram chat.', 'Telegram');
+            logger.info(`[User: ${username}] Screenshot sent directly to Telegram chat.`, 'Telegram');
           } else {
             await ctx.reply(`❌ Gagal mengambil screenshot: ${res.error}`);
           }
         } catch (e) {
-          logger.error(`Error taking/sending screenshot via Telegram: ${e.message}`, 'Telegram');
+          logger.error(`[User: ${username}] Error taking/sending screenshot via Telegram: ${e.message}`, 'Telegram');
           await ctx.reply(`❌ Error taking/sending screenshot: ${e.message}`);
         }
         return;
@@ -77,10 +74,10 @@ async function startBot(token, adminChatId, apiConfig) {
       await ctx.sendChatAction('typing');
 
       try {
-        const result = await llm.runAgent(text, apiConfig);
+        const result = await llm.runAgent(text, { ...apiConfig, username });
         await ctx.reply(result.text);
       } catch (err) {
-        logger.error(`Error processing command: ${err.message}`, 'Telegram');
+        logger.error(`[User: ${username}] Error processing command: ${err.message}`, 'Telegram');
         await ctx.reply(`❌ Gagal mengeksekusi perintah: ${err.message}`);
       }
     });
@@ -88,44 +85,52 @@ async function startBot(token, adminChatId, apiConfig) {
     // Launch bot polling asynchronously so it NEVER blocks the server API thread!
     bot.launch()
       .then(() => {
-        logger.info('Telegram Bot successfully launched and polling!', 'Telegram');
+        logger.info(`Telegram Bot for ${username} successfully launched and polling!`, 'Telegram');
         // Send startup notification if chat ID is set
         if (adminChatId) {
-          bot.telegram.sendMessage(adminChatId, '🟢 *OpenClaw Server Connected!*\nSistem berhasil diaktifkan kembali. Siap menerima perintah dari Anda secara langsung.')
-            .catch(e => logger.warn(`Failed to send startup message: ${e.message}`, 'Telegram'));
+          bot.telegram.sendMessage(adminChatId, `🟢 *Brolaws Server Connected!*\nSistem berhasil diaktifkan kembali untuk akun ${username}. Siap menerima perintah dari Anda secara langsung.`)
+            .catch(e => logger.warn(`[User: ${username}] Failed to send startup message: ${e.message}`, 'Telegram'));
         }
       })
       .catch(err => {
-        logger.error(`Failed to launch Telegram Bot polling: ${err.message}`, 'Telegram');
-        botInstance = null;
+        logger.error(`[User: ${username}] Failed to launch Telegram Bot polling for ${username}: ${err.message}`, 'Telegram');
+        delete activeBots[username];
       });
     
-    botInstance = bot;
-    currentToken = token;
-    currentAdminChatId = adminChatId;
-    currentApiConfig = apiConfig;
+    activeBots[username] = {
+      bot,
+      token,
+      adminChatId,
+      apiConfig
+    };
 
-    logger.info('Telegram Bot initialized and launch sequence started.', 'Telegram');
+    logger.info(`Telegram Bot for ${username} initialized and launch sequence started.`, 'Telegram');
     return true;
   } catch (err) {
-    logger.error(`Failed to launch Telegram Bot: ${err.message}`, 'Telegram');
-    botInstance = null;
+    logger.error(`[User: ${username}] Failed to launch Telegram Bot: ${err.message}`, 'Telegram');
+    delete activeBots[username];
     return false;
   }
 }
 
-async function stopBot() {
-  if (botInstance) {
-    logger.info('Stopping Telegram Bot polling...', 'Telegram');
+async function stopUserBot(username) {
+  const userBot = activeBots[username];
+  if (userBot) {
+    logger.info(`Stopping Telegram Bot polling for ${username}...`, 'Telegram');
     try {
-      await botInstance.stop();
+      await userBot.bot.stop();
     } catch (e) {
-      logger.error(`Error stopping bot: ${e.message}`, 'Telegram');
+      logger.error(`Error stopping bot for ${username}: ${e.message}`, 'Telegram');
     }
-    botInstance = null;
-    currentToken = null;
-    currentAdminChatId = null;
-    logger.info('Telegram Bot stopped.', 'Telegram');
+    delete activeBots[username];
+    logger.info(`Telegram Bot for ${username} stopped.`, 'Telegram');
+  }
+}
+
+async function stopAllBots() {
+  const usernames = Object.keys(activeBots);
+  for (const username of usernames) {
+    await stopUserBot(username);
   }
 }
 
@@ -141,13 +146,14 @@ async function sendDirectMessage(token, adminChatId, message) {
   }
 }
 
-function getStatus() {
-  return botInstance !== null;
+function getUserBotStatus(username) {
+  return activeBots[username] !== undefined;
 }
 
 module.exports = {
-  startBot,
-  stopBot,
+  startUserBot,
+  stopUserBot,
+  stopAllBots,
   sendDirectMessage,
-  getStatus
+  getUserBotStatus
 };

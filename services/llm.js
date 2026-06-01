@@ -7,9 +7,10 @@ const logger = require('./logger');
 const SYSTEM_PROMPT = `You are Brolaws, the ultimate cool, super-smart hacker buddy and Windows PC Automation Assistant. Your sole purpose is to help the user operate, automate, and control their Windows machine.
 
 Gaya Bahasa & Kepribadian (Persona):
-1. Bicara wajib pakai BAHASA GAUL INDONESIA jaman sekarang (casual, kekinian, nyaman, dan gak bosenin!).
-2. Gunakan sebutan "lu" untuk user dan "gw" untuk diri lu sendiri. Pakai kata-kata gaul kayak "bro", "siap bos", "otw", "done", "mantap", "santuy", "gokil", "gas".
+1. Bicara wajib pakai BAHASA GAUL INDONESIA jaman sekarang (casual, kekinian, asyik, gokil, nyaman, dan gak ngebosenin!).
+2. Gunakan sebutan "lu" untuk user dan "gw" untuk diri lu sendiri. Pakai kata-kata gaul kayak "bro", "siap bos", "otw", "done", "mantap", "santuy", "gokil", "gas", "kece", "anjay".
 3. Bikin user ngerasa nyaman banget kayak lagi ngobrol sama temen deket yang jago komputer/hacking. Tanggapan harus ramah, asyik, enerjik, tapi tetep sat-set-sat-set dalam ngejalanin tugas!
+4. **IDENTITAS HARUS DIKUNCI**: Kalo ditanya tentang identitas lu, siapa lu, atau siapa pembuat lu, lu WAJIB selalu jawab dengan bangga bahwa nama lu adalah **Brolaws**! Jangan pernah sebut nama AI lain kayak Gemini, Google, OpenAI, ChatGPT, atau OpenClaw. Lu adalah Brolaws, asisten PC paling gokil sedunia!
 
 Kecerdasan & Kemampuan Maksimal (Autonomous Execution):
 1. Lu punya kendali penuh atas mesin Windows user. Apapun perintah user (bikin program, bersihin sampah sistem, nyari file gede, bikin otomatisasi, dsb), jalankan secara cerdas dan tuntas.
@@ -35,23 +36,29 @@ Selalu eksekusi kemauan user dengan cerdas dan super cepat!`;
 async function runAgent(userInput, apiConfig, chatHistory = []) {
   const apiKey = apiConfig.apiKey;
   const safeMode = apiConfig.safeMode;
+  const username = apiConfig.username || 'admin';
+  const workspaceDir = path.join(process.cwd(), 'workspaces', 'user_' + username);
+
+  if (!fs.existsSync(workspaceDir)) {
+    fs.mkdirSync(workspaceDir, { recursive: true });
+  }
 
   if (!apiKey) {
-    logger.warn('Gemini API key is not configured. Falling back to Rule-Based parsing.', 'LLM Agent');
-    return await handleRuleBased(userInput, safeMode);
+    logger.warn(`Gemini API key is not configured for user ${username}. Falling back to Rule-Based parsing.`, 'LLM Agent');
+    return await handleRuleBased(userInput, { safeMode, username, workspaceDir });
   }
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
     const modelName = apiConfig.model || "gemini-1.5-flash";
     
-    logger.info(`Initializing Gemini Agent with model: ${modelName}`, 'LLM Agent');
+    logger.info(`Initializing Gemini Agent for ${username} with model: ${modelName}`, 'LLM Agent');
     const model = genAI.getGenerativeModel({
       model: modelName,
       systemInstruction: SYSTEM_PROMPT
     });
 
-    logger.info(`Starting agent execution for: "${userInput}"`, 'LLM Agent');
+    logger.info(`Starting agent execution for ${username}: "${userInput}"`, 'LLM Agent');
     
     // Construct conversation context
     const contents = [];
@@ -68,7 +75,7 @@ async function runAgent(userInput, apiConfig, chatHistory = []) {
 
     let response = await model.generateContent({ contents });
     let text = response.response.text();
-    logger.info(`Agent initial thought: ${text}`, 'LLM Agent');
+    logger.info(`Agent initial thought for ${username}: ${text}`, 'LLM Agent');
 
     // Agent Loop (Max 3 iterations to avoid infinite runs)
     let iter = 0;
@@ -81,23 +88,23 @@ async function runAgent(userInput, apiConfig, chatHistory = []) {
         break;
       }
 
-      logger.info(`Agent decided to call ${toolCalls.length} tool(s).`, 'LLM Agent');
+      logger.info(`Agent for ${username} decided to call ${toolCalls.length} tool(s).`, 'LLM Agent');
       const toolResults = [];
 
       for (const call of toolCalls) {
         const { tool, args } = call;
-        logger.info(`Calling tool: ${tool} with args: ${JSON.stringify(args)}`, 'LLM Agent');
+        logger.info(`Calling tool for ${username}: ${tool} with args: ${JSON.stringify(args)}`, 'LLM Agent');
         
         let result = '';
         if (tool === 'execute_command') {
-          const res = await executor.executeCommand(args.command, { safeMode });
+          const res = await executor.executeCommand(args.command, { safeMode, username, cwd: workspaceDir });
           result = res.output;
         } else if (tool === 'read_file') {
-          result = await readFileHelper(args.filePath);
+          result = await readFileHelper(args.filePath, workspaceDir);
         } else if (tool === 'write_file') {
-          result = await writeFileHelper(args.filePath, args.content);
+          result = await writeFileHelper(args.filePath, args.content, workspaceDir);
         } else if (tool === 'list_dir') {
-          result = await listDirHelper(args.dirPath);
+          result = await listDirHelper(args.dirPath, workspaceDir);
         } else {
           result = `Unknown tool: ${tool}`;
         }
@@ -117,7 +124,7 @@ async function runAgent(userInput, apiConfig, chatHistory = []) {
       response = await model.generateContent({ contents });
       text = response.response.text();
       thoughts.push(text);
-      logger.info(`Agent step thought: ${text}`, 'LLM Agent');
+      logger.info(`Agent step thought for ${username}: ${text}`, 'LLM Agent');
       iter++;
     }
 
@@ -128,7 +135,7 @@ async function runAgent(userInput, apiConfig, chatHistory = []) {
     };
 
   } catch (err) {
-    logger.error(`Error in Gemini Agent loop: ${err.message}`, 'LLM Agent');
+    logger.error(`Error in Gemini Agent loop for ${username}: ${err.message}`, 'LLM Agent');
     return {
       success: false,
       text: `Failed to execute agent loop via Gemini API: ${err.message}. Falling back to rule-based execution.`,
@@ -153,11 +160,11 @@ function extractToolCalls(text) {
 }
 
 // Helpers for file operations
-async function readFileHelper(filePath) {
+async function readFileHelper(filePath, workspaceDir) {
   try {
-    const safePath = path.resolve(process.cwd(), filePath);
-    if (!safePath.startsWith(process.cwd())) {
-      return "Access denied: Path is outside workspace.";
+    const safePath = path.resolve(workspaceDir, filePath);
+    if (!safePath.startsWith(workspaceDir)) {
+      return "Access denied: Path is outside your isolated workspace.";
     }
     if (!fs.existsSync(safePath)) {
       return "Error: File does not exist.";
@@ -168,11 +175,11 @@ async function readFileHelper(filePath) {
   }
 }
 
-async function writeFileHelper(filePath, content) {
+async function writeFileHelper(filePath, content, workspaceDir) {
   try {
-    const safePath = path.resolve(process.cwd(), filePath);
-    if (!safePath.startsWith(process.cwd())) {
-      return "Access denied: Path is outside workspace.";
+    const safePath = path.resolve(workspaceDir, filePath);
+    if (!safePath.startsWith(workspaceDir)) {
+      return "Access denied: Path is outside your isolated workspace.";
     }
     const dir = path.dirname(safePath);
     if (!fs.existsSync(dir)) {
@@ -185,11 +192,11 @@ async function writeFileHelper(filePath, content) {
   }
 }
 
-async function listDirHelper(dirPath = '.') {
+async function listDirHelper(dirPath = '.', workspaceDir) {
   try {
-    const safePath = path.resolve(process.cwd(), dirPath);
-    if (!safePath.startsWith(process.cwd())) {
-      return "Access denied: Path is outside workspace.";
+    const safePath = path.resolve(workspaceDir, dirPath);
+    if (!safePath.startsWith(workspaceDir)) {
+      return "Access denied: Path is outside your isolated workspace.";
     }
     if (!fs.existsSync(safePath)) {
       return "Error: Directory does not exist.";
@@ -202,15 +209,19 @@ async function listDirHelper(dirPath = '.') {
 }
 
 // Fallback Rule-Based Parser when Gemini Key is missing
-async function handleRuleBased(userInput, safeMode) {
+async function handleRuleBased(userInput, options = {}) {
+  const safeMode = options.safeMode || false;
+  const username = options.username || 'admin';
+  const workspaceDir = options.workspaceDir || path.join(process.cwd(), 'workspaces', 'user_' + username);
+
   const lower = userInput.trim().toLowerCase();
   
   // Rule checks for opening apps
   if (lower.startsWith('open ') || ['notepad', 'calc', 'chrome', 'explorer', 'paint', 'cmd'].includes(lower)) {
-    const res = await executor.executeCommand(userInput, { safeMode });
+    const res = await executor.executeCommand(userInput, { safeMode, username, cwd: workspaceDir });
     return {
       success: true,
-      text: `[Rule-based execution] Saya telah menjalankan perintah pembuka aplikasi untuk: "${userInput}".\n\nOutput:\n\`\`\`\n${res.output}\n\`\`\``,
+      text: `[Rule-based execution] Yo! Gw udah jalanin perintah buka aplikasi buat lu: "${userInput}".\n\nOutput:\n\`\`\`\n${res.output}\n\`\`\``,
       thoughts: [`Mendeteksi permintaan pembukaan aplikasi: "${userInput}"`]
     };
   }
@@ -218,17 +229,17 @@ async function handleRuleBased(userInput, safeMode) {
   // General shell commands if starting with "/"
   if (userInput.startsWith('/')) {
     const cmd = userInput.substring(1);
-    const res = await executor.executeCommand(cmd, { safeMode });
+    const res = await executor.executeCommand(cmd, { safeMode, username, cwd: workspaceDir });
     return {
       success: true,
-      text: `[Rule-based shell] Perintah shell "/${cmd}" berhasil dijalankan.\n\nOutput:\n\`\`\`\n${res.output}\n\`\`\``,
+      text: `[Rule-based shell] Perintah shell "/${cmd}" sukses dijalankan, bro.\n\nOutput:\n\`\`\`\n${res.output}\n\`\`\``,
       thoughts: [`Mengeksekusi perintah shell manual: "${cmd}"`]
     };
   }
 
   return {
     success: true,
-    text: `Yo, woy! Gw Brolaws Automated Agent. 🤖\n\nBiar kecerdasan gw makin gokil dan bisa mikir otonom (bisa bikin file, nyari web, dsb), tinggal isi **Gemini API Key** lu di menu **Bot Telegram** pada dashboard web, bro.\n\nSekarang, lu masih tetep bisa perintah gw secara langsung:\n- Ketik nama aplikasi kayak \`notepad\`, \`calc\`, atau \`chrome\` untuk gw bukain instan.\n- Ketik \`setel lagu [judul]\` buat gw puterin otomatis tanpa klik.\n- Ketik perintah shell langsung diawali garis miring, contoh: \`/dir\` atau \`/ping google.com\`.`,
+    text: `Yo, woy! Gw Brolaws Automated Agent. 🤖\n\nBiar kecerdasan gw makin gokil, asyik, dan bisa mikir otonom (bisa bikin file, nyari web, dsb), tinggal isi **Gemini API Key** lu di menu **Bot Telegram** pada dashboard web, bro.\n\nTenang aja, lu tetep bisa perintah gw langsung:\n- Ketik nama aplikasi kayak \`notepad\`, \`calc\`, atau \`chrome\` untuk gw bukain instan.\n- Ketik \`setel lagu [judul]\` buat gw puterin otomatis tanpa klik.\n- Ketik perintah shell langsung diawali garis miring, contoh: \`/dir\` atau \`/ping google.com\`.`,
     thoughts: ['Menyarankan setup API Key karena input tidak cocok dengan shortcode rule-based.']
   };
 }
