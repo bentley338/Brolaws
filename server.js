@@ -227,9 +227,37 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
-// 0.3 Google Sign-In Mockup Bypass Handler
+// 0.3 Google Sign-In Authenticator (Supports Real Google JWT & Mock Selectors)
 app.post('/api/auth/google', (req, res) => {
-  const { email, name, googleId } = req.body;
+  const { credential, email: mockEmail, name: mockName, googleId: mockGoogleId } = req.body;
+  
+  let email = mockEmail;
+  let name = mockName;
+  let googleId = mockGoogleId;
+
+  // If real Google Signed JWT credential is sent, parse and decode it locally
+  if (credential) {
+    try {
+      const parts = credential.split('.');
+      if (parts.length !== 3) {
+        return res.status(400).json({ success: false, message: 'Format token Google tidak valid!' });
+      }
+      
+      // Decode JWT base64url payload segment (index 1)
+      const payloadBuffer = Buffer.from(parts[1], 'base64');
+      const payload = JSON.parse(payloadBuffer.toString('utf-8'));
+      
+      email = payload.email;
+      name = payload.name || payload.given_name || email.split('@')[0];
+      googleId = payload.sub; // unique Google ID
+      
+      logger.info(`Received real Google OAuth JWT. Decoded successfully for: ${email}`, 'Server');
+    } catch (err) {
+      logger.error(`Failed to parse Google OAuth JWT: ${err.message}`, 'Server');
+      return res.status(400).json({ success: false, message: `Gagal membaca identitas Google: ${err.message}` });
+    }
+  }
+
   if (!email) {
     return res.status(400).json({ success: false, message: 'Google email wajib diisi!' });
   }
@@ -240,7 +268,7 @@ app.post('/api/auth/google', (req, res) => {
   const normalizedUser = derivedUsername.toLowerCase();
 
   let isNew = false;
-  // Auto-register if user doesn't exist
+  // Auto-register if user doesn't exist in Brolaws SaaS
   if (!db.users[normalizedUser]) {
     logger.info(`Auto-registering Google user: ${email} -> ${derivedUsername}`, 'Server');
     db.users[normalizedUser] = {
@@ -259,7 +287,7 @@ app.post('/api/auth/google', (req, res) => {
     };
     writeDatabase(db);
     
-    // Create workspace folder
+    // Create isolated workspace folder sandbox
     const userWorkspace = path.join(process.cwd(), 'workspaces', 'user_' + normalizedUser);
     if (!fs.existsSync(userWorkspace)) {
       fs.mkdirSync(userWorkspace, { recursive: true });
