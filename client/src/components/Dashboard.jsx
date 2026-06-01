@@ -93,7 +93,24 @@ export default function Dashboard({ status, refreshStatus }) {
           <h1 className="text-gradient" style={{ fontSize: '2.2rem', marginBottom: '4px' }}>System Command Dashboard</h1>
           <p style={{ color: 'var(--text-muted)' }}>Monitor host metrics, active agent commands, and Telegram pipelines.</p>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <a
+            href={`/api/agent/download?token=${localStorage.getItem('brolaws_session_token')}`}
+            className="btn-primary"
+            style={{ 
+              padding: '10px 18px', 
+              fontSize: '0.85rem', 
+              fontWeight: '700', 
+              textDecoration: 'none',
+              borderRadius: '8px',
+              boxShadow: 'var(--glow-mint)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            📥 Download Agent
+          </a>
           <div className="glass-panel" style={{ padding: '10px 20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span className={`status-dot ${agentOnline ? 'online' : 'offline'}`} style={{ animation: agentOnline ? 'pulse-glow 1.5s infinite' : 'none' }}></span>
             <span style={{ fontWeight: '600', fontSize: '0.95rem' }}>

@@ -387,9 +387,6 @@ app.get('/api/status', (req, res) => {
   const load = os.loadavg();
   const cpuUsage = Math.round(load[0] * 100) || 12;
 
-  // Let local agent poll act as a temporary heartbeat check
-  executor.registerHeartbeat(username);
-
   res.json({
     botOnline: telegram.getUserBotStatus(username),
     agentOnline: executor.isAgentOnline(username),
