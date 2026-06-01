@@ -15,8 +15,35 @@ const llm = require('./services/llm');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+let activeSessionToken = null;
+
+const authMiddleware = (req, res, next) => {
+  if (!req.path.startsWith('/api') || req.path === '/api/auth/login') {
+    return next();
+  }
+
+  if (req.path === '/api/screenshot') {
+    const queryToken = req.query.token;
+    if (queryToken && queryToken === activeSessionToken) {
+      return next();
+    }
+    return res.status(401).json({ success: false, message: 'Unauthorized screen view request.' });
+  }
+
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    if (token === activeSessionToken) {
+      return next();
+    }
+  }
+
+  res.status(401).json({ success: false, message: 'Unauthorized session.' });
+};
+
 app.use(cors());
 app.use(express.json());
+app.use(authMiddleware);
 
 // Persistent store setup
 const DB_DIR = path.join(__dirname, 'database');
@@ -32,7 +59,8 @@ const DEFAULT_SETTINGS = {
   geminiApiKey: '',
   safeMode: false,
   geminiModel: 'gemini-1.5-flash',
-  systemPrompt: 'You are OpenClaw, an advanced autonomous AI agent running on the user\'s local Windows machine.'
+  adminPassword: 'brolaws123',
+  systemPrompt: 'You are Brolaws, the ultimate cool, super-smart hacker buddy and Windows PC Automation Assistant. Your sole purpose is to help the user operate, automate, and control their Windows machine.'
 };
 
 function readSettings() {
@@ -83,6 +111,39 @@ if (fs.existsSync(clientBuildPath)) {
 }
 
 // API Endpoints
+
+// 0. Auth & Session Gating
+app.post('/api/auth/login', (req, res) => {
+  const { password } = req.body;
+  const settings = readSettings();
+  
+  if (password && password === settings.adminPassword) {
+    activeSessionToken = `brolaws-token-${Date.now()}-${Math.round(Math.random() * 100000)}`;
+    logger.info('Admin successfully logged in and authenticated.', 'Server');
+    res.json({ success: true, token: activeSessionToken });
+  } else {
+    logger.warn('Failed login attempt detected.', 'Server');
+    res.status(400).json({ success: false, message: 'Waduh, password lu salah bro!' });
+  }
+});
+
+// 0.1 Remote Desktop Screenshot Getter
+app.get('/api/screenshot', (req, res) => {
+  const screenshotPath = path.join(process.cwd(), 'screenshot.png');
+  if (fs.existsSync(screenshotPath)) {
+    res.sendFile(screenshotPath);
+  } else {
+    // Generate a quick placeholder screenshot if none exists
+    const executor = require('./services/executor');
+    executor.takeScreenshot().then(result => {
+      if (result.success) {
+        res.sendFile(result.path);
+      } else {
+        res.status(404).send('No screenshot captured yet.');
+      }
+    });
+  }
+});
 
 // 1. Get Status & System Metrics
 app.get('/api/status', (req, res) => {

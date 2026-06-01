@@ -1,5 +1,7 @@
 const { exec } = require('child_process');
 const logger = require('./logger');
+const path = require('path');
+const fs = require('fs');
 
 // Whitelist of common applications we can open directly on Windows
 const WINDOWS_APPS = {
@@ -35,6 +37,37 @@ async function getFirstYoutubeVideoId(query) {
   }
 }
 
+// Native PowerShell Screenshot Capturer
+function takeScreenshot() {
+  return new Promise((resolve) => {
+    const outputPath = path.join(process.cwd(), 'screenshot.png');
+    
+    // Commands to load Drawing assembly, capture the PrimaryScreen bounds, and save as PNG
+    const psCommand = `powershell -NoProfile -Command "
+      [Reflection.Assembly]::LoadWithPartialName('System.Drawing') | Out-Null;
+      [Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;
+      $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds;
+      $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height;
+      $graphics = [System.Drawing.Graphics]::FromImage($bmp);
+      $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size);
+      $bmp.Save('${outputPath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png);
+      $graphics.Dispose();
+      $bmp.Dispose();
+    "`;
+
+    logger.info('Capturing remote desktop screenshot via native PowerShell...', 'Executor');
+
+    exec(psCommand, (error, stdout, stderr) => {
+      if (error) {
+        logger.error(`Screenshot capture failed: ${error.message}`, 'Executor');
+        return resolve({ success: false, error: error.message });
+      }
+      logger.info('Screenshot captured successfully and saved to disk.', 'Executor');
+      resolve({ success: true, path: outputPath });
+    });
+  });
+}
+
 function executeCommand(commandStr, options = { safeMode: false }) {
   return new Promise((resolve) => {
     logger.cmd(`Executing: "${commandStr}"`, 'Executor');
@@ -53,6 +86,18 @@ function executeCommand(commandStr, options = { safeMode: false }) {
     // Special handlers to open apps on Windows asynchronously
     let finalCommand = commandStr;
     const lowerCmd = commandStr.trim().toLowerCase();
+
+    // Screenshot triggers
+    if (['ss', '/ss', 'screenshot', '/screenshot'].includes(lowerCmd)) {
+      takeScreenshot().then(res => {
+        resolve({
+          success: res.success,
+          output: res.success ? 'Screenshot captured successfully.' : `Failed: ${res.error}`,
+          error: !res.success
+        });
+      });
+      return;
+    }
     
     // Music playing handler (Auto-plays direct YouTube watch video link!)
     const musicPrefixes = ['setel lagu ', 'putar lagu ', 'play ', 'setel musik ', 'putar musik '];
@@ -118,5 +163,6 @@ function runChildProcess(finalCommand, resolve) {
 }
 
 module.exports = {
-  executeCommand
+  executeCommand,
+  takeScreenshot
 };

@@ -4,6 +4,8 @@ import { apiRequest } from '../utils/api';
 export default function Dashboard({ status, refreshStatus }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [screenTimestamp, setScreenTimestamp] = useState(Date.now());
+  const [capturing, setCapturing] = useState(false);
   const logEndRef = useRef(null);
 
   useEffect(() => {
@@ -32,6 +34,24 @@ export default function Dashboard({ status, refreshStatus }) {
     }
   };
 
+  const captureScreen = async () => {
+    setCapturing(true);
+    try {
+      // Run the 'ss' command directly in terminal API
+      await apiRequest('/api/terminal/run', 'POST', { command: 'ss' });
+      setScreenTimestamp(Date.now());
+    } catch (e) {
+      console.error("Failed to capture screenshot:", e);
+    } finally {
+      setCapturing(false);
+    }
+  };
+
+  const getScreenUrl = () => {
+    const token = localStorage.getItem('brolaws_session_token');
+    return `/api/screenshot?token=${token}&t=${screenTimestamp}`;
+  };
+
   const formatUptime = (seconds) => {
     if (!seconds) return '0s';
     const d = Math.floor(seconds / (3600*24));
@@ -50,8 +70,8 @@ export default function Dashboard({ status, refreshStatus }) {
     switch (level) {
       case 'error': return { color: 'var(--status-offline)' };
       case 'warn': return { color: 'var(--status-warning)' };
-      case 'cmd': return { color: 'var(--accent-purple)', fontWeight: '600' };
-      default: return { color: 'var(--accent-cyan)' };
+      case 'cmd': return { color: 'var(--accent-gold)', fontWeight: '600' };
+      default: return { color: 'var(--accent-mint)' };
     }
   };
 
@@ -93,8 +113,8 @@ export default function Dashboard({ status, refreshStatus }) {
           <CircularProgress
             percentage={system.cpu.percentage}
             label="Active CPU Load"
-            color="var(--accent-purple)"
-            glow="0 0 10px rgba(139, 92, 246, 0.6)"
+            color="var(--accent-gold)"
+            glow="0 0 10px rgba(251, 191, 36, 0.4)"
           />
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-dark)', textTransform: 'uppercase' }}>CPU Specs</span>
@@ -112,8 +132,8 @@ export default function Dashboard({ status, refreshStatus }) {
           <CircularProgress
             percentage={system.ram.percentage}
             label="RAM Memory Usage"
-            color="var(--accent-cyan)"
-            glow="0 0 10px rgba(6, 182, 212, 0.6)"
+            color="var(--accent-mint)"
+            glow="0 0 10px rgba(52, 211, 153, 0.4)"
           />
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-dark)', textTransform: 'uppercase' }}>Memory Capacity</span>
@@ -139,7 +159,7 @@ export default function Dashboard({ status, refreshStatus }) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Uptime Counter</span>
-              <span style={{ fontWeight: 'bold', color: 'var(--accent-cyan)' }}>{formatUptime(system.uptime)}</span>
+              <span style={{ fontWeight: 'bold', color: 'var(--accent-mint)' }}>{formatUptime(system.uptime)}</span>
             </div>
           </div>
           <div style={{ fontSize: '0.8rem', color: 'var(--text-dark)', marginTop: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -149,67 +169,126 @@ export default function Dashboard({ status, refreshStatus }) {
         </div>
       </div>
 
-      {/* Server Activity Log console */}
-      <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '400px' }}>
-        <div style={{
-          padding: '16px 24px',
-          borderBottom: '1px solid var(--border-glass)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-            <h3 style={{ fontSize: '1.05rem', fontWeight: '600' }}>Active Event Feed</h3>
+      {/* Two-Column Event Feed & Remote Screen Layout */}
+      <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', marginBottom: '32px' }}>
+        
+        {/* Left Column: Event logs feed */}
+        <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '400px', flex: 1.2, minWidth: '320px' }}>
+          <div style={{
+            padding: '16px 24px',
+            borderBottom: '1px solid var(--border-glass)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-mint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: '600' }}>Active Event Feed</h3>
+            </div>
+            <button
+              onClick={fetchLogs}
+              className="btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '0.8rem', gap: '4px' }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              Force Refresh
+            </button>
           </div>
-          <button
-            onClick={fetchLogs}
-            className="btn-secondary"
-            style={{ padding: '6px 12px', fontSize: '0.8rem', gap: '4px' }}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            Force Refresh
-          </button>
+
+          <div style={{
+            flex: 1,
+            padding: '20px 24px',
+            overflowY: 'auto',
+            background: 'rgba(5, 7, 10, 0.4)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: '0.85rem',
+            lineHeight: '1.6'
+          }}>
+            {loading ? (
+              <div style={{ color: 'var(--text-dark)', textAlign: 'center', padding: '40px' }}>Analyzing server output buffer...</div>
+            ) : logs.length === 0 ? (
+              <div style={{ color: 'var(--text-dark)', textAlign: 'center', padding: '40px' }}>No logs registered yet. Trigger a command to see events.</div>
+            ) : (
+              logs.map((log, idx) => (
+                <div key={idx} style={{ marginBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.01)', paddingBottom: '6px' }}>
+                  <span style={{ color: 'var(--text-dark)' }}>[{new Date(log.timestamp).toLocaleTimeString()}]</span>{' '}
+                  <span style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    marginRight: '8px',
+                    fontSize: '0.75rem',
+                    ...getLogStyle(log.level)
+                  }}>
+                    {log.level.toUpperCase()}
+                  </span>
+                  {log.context && (
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 'bold', marginRight: '6px' }}>
+                      [{log.context}]
+                    </span>
+                  )}
+                  <span style={{ color: '#e5e7eb' }}>{log.message}</span>
+                </div>
+              ))
+            )}
+            <div ref={logEndRef} />
+          </div>
         </div>
 
-        <div style={{
-          flex: 1,
-          padding: '20px 24px',
-          overflowY: 'auto',
-          background: 'rgba(5, 7, 10, 0.4)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: '0.85rem',
-          lineHeight: '1.6'
-        }}>
-          {loading ? (
-            <div style={{ color: 'var(--text-dark)', textAlign: 'center', padding: '40px' }}>Analyzing server output buffer...</div>
-          ) : logs.length === 0 ? (
-            <div style={{ color: 'var(--text-dark)', textAlign: 'center', padding: '40px' }}>No logs registered yet. Trigger a command to see events.</div>
-          ) : (
-            logs.map((log, idx) => (
-              <div key={idx} style={{ marginBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.01)', paddingBottom: '6px' }}>
-                <span style={{ color: 'var(--text-dark)' }}>[{new Date(log.timestamp).toLocaleTimeString()}]</span>{' '}
-                <span style={{
-                  background: 'rgba(255,255,255,0.03)',
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  marginRight: '8px',
-                  fontSize: '0.75rem',
-                  ...getLogStyle(log.level)
-                }}>
-                  {log.level.toUpperCase()}
-                </span>
-                {log.context && (
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 'bold', marginRight: '6px' }}>
-                    [{log.context}]
-                  </span>
-                )}
-                <span style={{ color: '#e5e7eb' }}>{log.message}</span>
-              </div>
-            ))
-          )}
-          <div ref={logEndRef} />
+        {/* Right Column: Live Remote Screenshot Preview */}
+        <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '400px', flex: 0.8, minWidth: '300px' }}>
+          <div style={{
+            padding: '16px 24px',
+            borderBottom: '1px solid var(--border-glass)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-mint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: '600' }}>Live PC Screen View</h3>
+            </div>
+            <button
+              onClick={captureScreen}
+              disabled={capturing}
+              className="btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '0.8rem', gap: '4px' }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              {capturing ? 'Capturing...' : 'Capture Screen'}
+            </button>
+          </div>
+          
+          <div style={{
+            flex: 1,
+            padding: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(5, 7, 10, 0.45)',
+            overflow: 'hidden',
+            position: 'relative'
+          }}>
+            <img
+              src={getScreenUrl()}
+              alt="Remote PC Screen Capture"
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'contain',
+                borderRadius: '6px',
+                border: '1px solid var(--border-glass)'
+              }}
+              onError={(e) => {
+                e.target.style.display = 'none';
+              }}
+              onLoad={(e) => {
+                e.target.style.display = 'block';
+              }}
+            />
+          </div>
         </div>
+
       </div>
     </div>
   );
@@ -228,7 +307,7 @@ function CircularProgress({ percentage, label, color, glow }) {
       <div style={{ position: 'relative', width: '100px', height: '100px' }}>
         <svg height="100" width="100" style={{ transform: 'rotate(-90deg)' }}>
           <circle
-            stroke="rgba(255, 255, 255, 0.04)"
+            stroke="rgba(255, 255, 255, 0.03)"
             fill="transparent"
             strokeWidth={stroke}
             r={normalizedRadius}

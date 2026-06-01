@@ -34,11 +34,11 @@ async function startBot(token, adminChatId, apiConfig) {
     bot.start((ctx) => {
       const chatId = ctx.chat.id.toString();
       if (adminChatId && chatId !== adminChatId.toString()) {
-        ctx.reply('❌ Access Denied: You are not authorized to control this OpenClaw server.');
+        ctx.reply('❌ Access Denied: You are not authorized to control this Brolaws server.');
         logger.warn(`Unauthorized startup request from Chat ID: ${chatId}`, 'Telegram');
         return;
       }
-      ctx.reply('🤖 OpenClaw Control Hub Activated! Saya siap mendengarkan perintah Anda.\n\nKetik apa saja untuk berbicara dengan AI Agent, atau gunakan garis miring untuk shell command (contoh: /dir).');
+      ctx.reply('🤖 Brolaws PC Controller Activated! Gw siap dengerin semua perintah lu, bro.\n\nKetik apa aja buat ngobrol santuy sama AI, atau ketik garis miring buat command shell langsung (contoh: /dir, /ss).');
     });
 
     bot.on('text', async (ctx) => {
@@ -53,6 +53,25 @@ async function startBot(token, adminChatId, apiConfig) {
       }
 
       logger.info(`Received Telegram message: "${text}"`, 'Telegram');
+
+      // Direct screenshot capture hook
+      const lowerText = text.trim().toLowerCase();
+      if (['/ss', 'ss', 'screenshot', '/screenshot'].includes(lowerText)) {
+        try {
+          const executor = require('./executor');
+          const res = await executor.takeScreenshot();
+          if (res.success) {
+            await ctx.replyWithPhoto({ source: res.path }, { caption: '📸 Ini screenshot desktop lu saat ini, bro! (Brolaws Active Screen)' });
+            logger.info('Screenshot sent directly to Telegram chat.', 'Telegram');
+          } else {
+            await ctx.reply(`❌ Gagal mengambil screenshot: ${res.error}`);
+          }
+        } catch (e) {
+          logger.error(`Error taking/sending screenshot via Telegram: ${e.message}`, 'Telegram');
+          await ctx.reply(`❌ Error taking/sending screenshot: ${e.message}`);
+        }
+        return;
+      }
       
       // Let the user know the agent is processing
       await ctx.sendChatAction('typing');

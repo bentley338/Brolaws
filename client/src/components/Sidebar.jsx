@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Sidebar({ activeTab, setActiveTab, botOnline }) {
+export default function Sidebar({ activeTab, setActiveTab, botOnline, onLogout }) {
   const menuItems = [
     {
       id: 'dashboard',
@@ -85,9 +85,9 @@ export default function Sidebar({ activeTab, setActiveTab, botOnline }) {
                 gap: '12px',
                 width: '100%',
                 padding: '12px 16px',
-                background: isActive ? 'rgba(99, 102, 241, 0.12)' : 'transparent',
+                background: isActive ? 'rgba(16, 185, 129, 0.08)' : 'transparent',
                 border: 'none',
-                borderLeft: isActive ? '3px solid var(--accent-indigo)' : '3px solid transparent',
+                borderLeft: isActive ? '3px solid var(--accent-mint)' : '3px solid transparent',
                 borderRadius: '0 8px 8px 0',
                 color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
                 cursor: 'pointer',
@@ -99,7 +99,7 @@ export default function Sidebar({ activeTab, setActiveTab, botOnline }) {
               }}
               className="sidebar-tab"
             >
-              <span style={{ color: isActive ? 'var(--accent-indigo)' : 'var(--text-muted)', display: 'inline-flex', alignItems: 'center' }}>
+              <span style={{ color: isActive ? 'var(--accent-mint)' : 'var(--text-muted)', display: 'inline-flex', alignItems: 'center' }}>
                 {item.icon}
               </span>
               {item.label}
@@ -107,6 +107,38 @@ export default function Sidebar({ activeTab, setActiveTab, botOnline }) {
           );
         })}
       </nav>
+
+      {/* Logout Action Button */}
+      {onLogout && (
+        <button
+          onClick={onLogout}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            width: '100%',
+            padding: '12px 16px',
+            background: 'transparent',
+            border: 'none',
+            borderLeft: '3px solid transparent',
+            borderRadius: '0 8px 8px 0',
+            color: 'var(--status-offline)',
+            cursor: 'pointer',
+            textAlign: 'left',
+            fontSize: '0.95rem',
+            fontWeight: '600',
+            transition: 'all 0.2s ease',
+            outline: 'none',
+            marginBottom: '16px'
+          }}
+          className="sidebar-tab"
+        >
+          <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--status-offline)' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </span>
+          Keluar (Logout)
+        </button>
+      )}
 
       <div className="sidebar-footer" style={{
         paddingTop: '20px',
